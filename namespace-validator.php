@@ -34,7 +34,7 @@ class NamespaceValidator
     public function validate()
     {
         echo "🔍 Starting namespace validation...\n\n";
-        
+
         $phpFiles = [];
 
         foreach ($this->declaredNamespaces as $folder) {
@@ -81,13 +81,13 @@ class NamespaceValidator
 
         // Parse namespace declaration
         $declaredNamespace = $this->extractNamespace($content);
-        
+
         // Parse use statements
         $useStatements = $this->extractUseStatements($content);
 
         // Validate namespace against file path
         $this->validateNamespaceLocation($declaredNamespace, $filePath, $relativePath);
-        
+
         // Validate use statements
         $this->validateUseStatements($useStatements, $filePath, $relativePath);
 
@@ -105,26 +105,62 @@ class NamespaceValidator
     private function extractUseStatements($content)
     {
         $uses = [];
-        
-        // Match use statements (simple and aliased)
-        if (preg_match_all('/^use\s+([^;]+);/m', $content, $matches)) {
+
+        // Match use statements including grouped ones
+        if (preg_match_all('/^use\s+([^;]+);/ms', $content, $matches)) {
             foreach ($matches[1] as $useStatement) {
                 $useStatement = trim($useStatement);
-                
-                // Handle aliases (use Foo\Bar as Baz)
-                if (strpos($useStatement, ' as ') !== false) {
-                    [$className, $alias] = explode(' as ', $useStatement, 2);
-                    $uses[] = [
-                        'full' => trim($className),
-                        'alias' => trim($alias),
-                        'original' => $useStatement
-                    ];
+
+                // Handle grouped use statements: use Foo\Bar\{Baz, Qux as Q};
+                if (preg_match('/^(.+)\{([^}]+)\}$/', $useStatement, $groupMatches)) {
+                    $baseNamespace = rtrim(trim($groupMatches[1]), '\\');
+                    $groupedClasses = $groupMatches[2];
+
+                    // Split by comma and handle each class in the group
+                    $classes = array_map('trim', explode(',', $groupedClasses));
+
+                    foreach ($classes as $class) {
+                        $class = trim($class);
+                        if (empty($class)) continue;
+
+                        // Handle aliases within groups (Baz as B)
+                        if (strpos($class, ' as ') !== false) {
+                            [$className, $alias] = explode(' as ', $class, 2);
+                            $className = trim($className);
+                            $alias = trim($alias);
+                        } else {
+                            $className = $class;
+                            $alias = $class; // The class name itself is the alias
+                        }
+
+                        $fullClassName = $baseNamespace . '\\' . $className;
+
+                        $uses[] = [
+                            'full' => $fullClassName,
+                            'alias' => $alias,
+                            'original' => $useStatement,
+                            'grouped' => true,
+                            'base_namespace' => $baseNamespace
+                        ];
+                    }
                 } else {
-                    $uses[] = [
-                        'full' => $useStatement,
-                        'alias' => basename(str_replace('\\', '/', $useStatement)),
-                        'original' => $useStatement
-                    ];
+                    // Handle regular use statements (simple and aliased)
+                    if (strpos($useStatement, ' as ') !== false) {
+                        [$className, $alias] = explode(' as ', $useStatement, 2);
+                        $uses[] = [
+                            'full' => trim($className),
+                            'alias' => trim($alias),
+                            'original' => $useStatement,
+                            'grouped' => false
+                        ];
+                    } else {
+                        $uses[] = [
+                            'full' => $useStatement,
+                            'alias' => basename(str_replace('\\', '/', $useStatement)),
+                            'original' => $useStatement,
+                            'grouped' => false
+                        ];
+                    }
                 }
             }
         }
@@ -141,15 +177,15 @@ class NamespaceValidator
         // Check against composer.json autoload configuration
         if ($this->composerConfig && isset($this->composerConfig['autoload']['psr-4'])) {
             $found = false;
-            
+
             foreach ($this->declaredNamespaces as $prefix => $path) {
                 $prefix = rtrim($prefix, '\\');
-                
+
                 if (strpos($namespace, $prefix) === 0) {
                     // Calculate expected path
                     $expectedPath = $path . str_replace('\\', '/', substr($namespace, strlen($prefix)));
                     $actualDir = dirname($relativePath);
-                    
+
                     if (strpos($actualDir, rtrim($expectedPath, '/')) !== 0) {
                         $this->errors[] = [
                             'file' => $relativePath,
@@ -161,7 +197,7 @@ class NamespaceValidator
                     break;
                 }
             }
-            
+
             if (!$found) {
                 $this->warnings[] = [
                     'file' => $relativePath,
@@ -210,11 +246,11 @@ class NamespaceValidator
 
         foreach ($this->composerConfig['autoload']['psr-4'] as $prefix => $path) {
             $prefix = rtrim($prefix, '\\');
-            
+
             if (strpos($className, $prefix) === 0) {
                 $relativePath = str_replace('\\', '/', substr($className, strlen($prefix)));
                 $filePath = $this->projectRoot . '/' . rtrim($path, '/') . '/' . ltrim($relativePath, '/') . '.php';
-                
+
                 if (file_exists($filePath)) {
                     return $filePath;
                 }
@@ -231,7 +267,7 @@ class NamespaceValidator
             'PDO', 'PDOStatement', 'PDOException', 'SplFileInfo', 'RecursiveDirectoryIterator',
             'RecursiveIteratorIterator', 'ArrayObject', 'stdClass'
         ];
-        
+
         $classBaseName = basename(str_replace('\\', '/', $className));
         return in_array($classBaseName, $builtins) || class_exists($className, false);
     }
@@ -261,7 +297,7 @@ class NamespaceValidator
         if (!empty($this->errors)) {
             echo "❌ ERRORS (" . count($this->errors) . "):\n";
             echo str_repeat("-", 40) . "\n";
-            
+
             foreach ($this->errors as $error) {
                 echo "File: {$error['file']}\n";
                 echo "Type: {$error['type']}\n";
@@ -272,7 +308,7 @@ class NamespaceValidator
         if (!empty($this->warnings)) {
             echo "⚠️  WARNINGS (" . count($this->warnings) . "):\n";
             echo str_repeat("-", 40) . "\n";
-            
+
             foreach ($this->warnings as $warning) {
                 echo "File: {$warning['file']}\n";
                 echo "Type: {$warning['type']}\n";
