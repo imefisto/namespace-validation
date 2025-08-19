@@ -26,8 +26,6 @@ class NamespaceValidator
             foreach ($this->composerConfig['autoload']['psr-4'] as $namespace => $folder) {
                 $this->declaredNamespaces[$namespace] = $folder;
             };
-
-            print_r($this->declaredNamespaces);
         }
     }
 
@@ -176,11 +174,11 @@ class NamespaceValidator
     {
         foreach ($useStatements as $use) {
             $className = $use['full'];
-            
+
             // Try to resolve the class
             if (!$this->classExists($className)) {
                 // Check if it's a PHP built-in
-                if (!$this->isBuiltinClass($className)) {
+                if (!$this->isBuiltinClass($className) && !$this->isVendorClass($className)) {
                     $this->errors[] = [
                         'file' => $relativePath,
                         'type' => 'missing_class',
@@ -234,6 +232,17 @@ class NamespaceValidator
         
         $classBaseName = basename(str_replace('\\', '/', $className));
         return in_array($classBaseName, $builtins) || class_exists($className, false);
+    }
+
+    private function isVendorClass($className)
+    {
+        foreach (array_keys($this->declaredNamespaces) as $namespace) {
+            if (str_starts_with(ltrim('\\', $className), $namespace)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function printResults()
