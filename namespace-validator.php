@@ -26,6 +26,8 @@ class NamespaceValidator
             foreach ($this->composerConfig['autoload']['psr-4'] as $namespace => $folder) {
                 $this->declaredNamespaces[$namespace] = $folder;
             };
+
+            krsort($this->declaredNamespaces);
         }
     }
 
@@ -82,7 +84,7 @@ class NamespaceValidator
         
         // Parse use statements
         $useStatements = $this->extractUseStatements($content);
-        
+
         // Validate namespace against file path
         $this->validateNamespaceLocation($declaredNamespace, $filePath, $relativePath);
         
@@ -140,7 +142,7 @@ class NamespaceValidator
         if ($this->composerConfig && isset($this->composerConfig['autoload']['psr-4'])) {
             $found = false;
             
-            foreach ($this->composerConfig['autoload']['psr-4'] as $prefix => $path) {
+            foreach ($this->declaredNamespaces as $prefix => $path) {
                 $prefix = rtrim($prefix, '\\');
                 
                 if (strpos($namespace, $prefix) === 0) {
@@ -237,7 +239,7 @@ class NamespaceValidator
     private function isVendorClass($className)
     {
         foreach (array_keys($this->declaredNamespaces) as $namespace) {
-            if (str_starts_with(ltrim('\\', $className), $namespace)) {
+            if (str_starts_with(ltrim($className, '\\'), $namespace)) {
                 return false;
             }
         }
